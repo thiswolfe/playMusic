@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Play Music</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #e6e6e6;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+     .audio-container {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            max-width: 600px;
+            width: 100%;
+        }
+     .audio-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+     .audio-controls button {
+            margin: 5px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            background-color: #ccc;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+     .audio-controls button:hover {
+            background-color: #11659a;
+            color:#eee;
+        }
+     .audio-list {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+     .audio-list-item {
+            padding: 8px;
+            cursor: pointer;
+            transition: background-color: 0.3s ease;
+        }
+     .audio-list-item:hover {
+            background-color: #eee;
+        }
+     .audio-list-item.active {
+            background-color: #11659a;
+            color: white;
+            font-weight: bold;
+        }
+     .button-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+        #audioPlayer {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #audioFileInput {
+            margin-bottom: 10px;
+        }
+     .current-audio-info {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+     .highlight-text {
+            color: #fbb929;
+        }
+     .lyrics-container {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: scroll;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+     .lyrics-line {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px dashed #ccc;
+            text-align: center;
+        }
+     .audio-list-item.active::before {
+            content: "正在播放 > ";
+            color: #fbb929;
+        }
+    </style>
+</head>
+<body>
+    <div class="audio-container">
+        <input type="file" id="audioFileInput" webkitdirectory directory multiple>
+        <div class="audio-list" id="audioList"></div>
+        <div class="audio-controls">
+            <div class="current-audio-info">
+                <span id="currentAudioName">正在播放: 无</span>
+            </div>
+            <audio id="audioPlayer" controls></audio>
+            <div class="button-container">
+                <button id="prevButton">上一首</button>
+                <button id="playButton">播放</button>
+                <button id="pauseButton">暂停</button>
+                <button id="nextButton">下一首</button>
+            </div>
+        </div>
+        <div class="lyrics-container" id="lyricsContainer">
+            <h3 id="lyricsHeader">歌词</h3>
+            <div id="lyricsContent"></div>
+        </div>
+    </div>
+    <script>
+        "use strict";
+        class AudioPlayer {
+            constructor() {
+                // 缓存元素
+                this.cacheElements();
+                this.audioFiles = [];
+                this.currentIndex = -1;
+                this.audioURL = null;
+                this.lyrics = new Map();
+                this.init();
+            }
+
+            cacheElements() {
+                this.elements = {
+                    audioFileInput: document.getElementById('audioFileInput'),
+                    audioPlayer: document.getElementById('audioPlayer'),
+                    prevButton: document.getElementById('prevButton'),
+                    playButton: document.getElementById('playButton'),
+                    pauseButton: document.getElementById('pauseButton'),
+                    nextButton: document.getElementById('nextButton'),
+                    audioList: document.getElementById('audioList'),
+                    currentAudioName: document.getElementById('currentAudioName'),
+                    lyricsContainer: document.getElementById('lyricsContainer'),
+                    lyricsHeader: document.getElementById('lyricsHeader'),
+                    lyricsContent: document.getElementById('lyricsContent')
+                };
+            }
+
+            init() {
+                this.elements.audioFileInput.addEventListener('change', this.handleFileInputChange.bind(this));
+                this.elements.playButton.addEventListener('click', this.handlePlayButtonClick.bind(this));
+                this.elements.pauseButton.addEventListener('click', this.handlePauseButtonClick.bind(this));
+                this.elements.prevButton.addEventListener('click', this.handlePrevButtonClick.bind(this));
+                this.elements.nextButton.addEventListener('click', this.handleNextButtonClick.bind(this));
+                this.elements.audioPlayer.addEventListener('timeupdate', this.throttle(this.updateLyrics.bind(this), 100));
+                this.elements.audioPlayer.addEventListener('ended', this.handleAudioEnded.bind(this));
+                this.elements.audioPlayer.addEventListener('loadedmetadata', this.onAudioLoadedMetadata.bind(this));
+                // 设置默认音量为 10%
+                this.setVolume(0.1);
+            }
+
+            handleFileInputChange(event) {
+                const audioTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/mp4', 'audio/flac', 'audio/opus'];
+                this.audioFiles = Array.from(event.target.files).filter(file => audioTypes.includes(file.type));
+                this.audioFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+                this.updateAudioList();
+            }
+
+            updateAudioList() {
+                this.elements.audioList.innerHTML = '';
+                this.audioFiles.forEach((file, index) => {
+                    const listItem = this.createAudioListItem(file, index);
+                    this.elements.audioList.appendChild(listItem);
+                });
+                this.updateActiveItem();
+            }
+
+            createAudioListItem(file, index) {
+                const listItem = document.createElement('div');
+                listItem.className = 'audio-list-item';
+                listItem.textContent = file.name;
+                listItem.addEventListener('click', () => this.playAudio(index));
+                return listItem;
+            }
+
+            updateActiveItem() {
+                const listItems = this.elements.audioList.children;
+                for (let i = 0; i < listItems.length; i++) {
+                    const item = listItems[i];
+                    item.classList.remove('active');
+                    item.textContent = item.textContent.replace("正在播放 > ", "");
+                }
+                if (this.currentIndex >= 0 && this.currentIndex < this.audioFiles.length) {
+                    listItems[this.currentIndex].classList.add('active');
+                    listItems[this.currentIndex].textContent = "正在播放 > " + this.audioFiles[this.currentIndex].name;
+                } else {
+                    this.elements.currentAudioName.textContent = "正在播放: 无";
+                }
+            }
+
+            playAudio(index) {
+                if (this.audioURL) {
+                    URL.revokeObjectURL(this.audioURL);
+                }
+                const file = this.audioFiles[index];
+                if (file) {
+                    this.audioURL = URL.createObjectURL(file);
+                    this.elements.audioPlayer.src = this.audioURL;
+                    this.currentIndex = index;
+                    this.elements.currentAudioName.textContent = "正在播放: " + file.name;
+                    this.updateActiveItem();
+                    this.loadLyrics(file);
+                }
+            }
+
+            loadLyrics(file) {
+                const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+                const lrcFileName = fileNameWithoutExt + ".lrc";
+                const lrcFile = this.findFileByName(lrcFileName);
+                if (lrcFile) {
+                    const reader = new FileReader();
+                    reader.onload = this.onLyricsLoaded.bind(this);
+                    reader.onerror = this.onLyricsError.bind(this);
+                    reader.readAsText(lrcFile);
+                } else {
+                    this.lyrics.clear();
+                    this.displayLyrics();
+                    console.warn(`未找到 ${lrcFileName} 的歌词文件`);
+                }
+            }
+
+            onLyricsLoaded(event) {
+                this.parseLyrics(event.target.result);
+                this.displayLyrics();
+            }
+
+            onLyricsError(error) {
+                console.error("读取歌词文件出错: ", error);
+            }
+
+            findFileByName(fileName) {
+                return Array.from(this.elements.audioFileInput.files).find(file => file.name === fileName);
+            }
+
+            parseLyrics(lyricsText) {
+                const lyricLines = lyricsText.split("\n");
+                this.lyrics.clear();
+                lyricLines.forEach(line => {
+                    if (line.trim()!== "") { 
+                        const parts = line.match(/\[(.*?)\](.*)/);
+                        if (parts) {
+                            let timeStr = parts[1].trim();
+                            const lyric = parts[2].trim();
+                            const timeParts = timeStr.split(":").map(part => parseInt(part.trim()));
+                            let timeInSeconds = 0;
+                            if (timeParts.length === 3) {
+                                timeInSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
+                            } else if (timeParts.length === 2) {
+                                timeInSeconds = timeParts[0] * 60 + timeParts[1];
+                            } else if (timeParts.length === 1) {
+                                timeInSeconds = timeParts[0];
+                            }
+                            this.lyrics.set(timeInSeconds, lyric);
+                        }
+                    }
+                });
+            }
+
+            displayLyrics() {
+                this.elements.lyricsContent.innerHTML = '';
+                if (this.lyrics.size > 0) {
+                    this.elements.lyricsHeader.textContent = Array.from(this.lyrics.values())[0];
+                } else {
+                    this.elements.lyricsHeader.textContent = this.elements.currentAudioName.textContent.replace("正在播放: ", "");
+                }
+                this.lyrics.forEach((lyric, index) => {
+                    const lyricLine = this.createLyricLine(lyric);
+                    this.elements.lyricsContent.appendChild(lyricLine);
+                });
+            }
+
+            createLyricLine(lyric) {
+                const lyricLine = document.createElement('div');
+                lyricLine.className = 'lyrics-line';
+                lyricLine.textContent = lyric;
+                return lyricLine;
+            }
+
+            handlePlayButtonClick() {
+                if (this.audioFiles.length > 0) {
+                    try {
+                        this.elements.audioPlayer.play().catch(error => {
+                            console.error("播放操作失败: ", error);
+                        });
+                    } catch (error) {
+                        console.error("播放操作失败: ", error);
+                    }
+                } else {
+                    console.warn("没有可播放的音频文件");
+                }
+            }
+
+            handlePauseButtonClick() {
+                try {
+                    this.elements.audioPlayer.pause();
+                } catch (error) {
+                    console.error("暂停操作失败: ", error);
+                }
+            }
+
+            handlePrevButtonClick() {
+                if (this.audioFiles.length > 0) {
+                    this.currentIndex = (this.currentIndex - 1 + this.audioFiles.length) % this.audioFiles.length;
+                    this.playAudio(this.currentIndex);
+                }
+            }
+
+            handleNextButtonClick() {
+                if (this.audioFiles.length > 0) {
+                    this.currentIndex = (this.currentIndex + 1) % this.audioFiles.length;
+                    this.playAudio(this.currentIndex);
+                }
+            }
+
+            updateLyrics() {
+                const currentTime = this.elements.audioPlayer.currentTime;
+                let foundLyric = false;
+                for (const [time, lyric] of this.lyrics) {
+                    if (currentTime >= time) {
+                        this.elements.lyricsHeader.textContent = lyric;
+                        foundLyric = true;
+                    }
+                }
+                if (!foundLyric && this.lyrics.size > 0) {
+                    this.elements.lyricsHeader.textContent = Array.from(this.lyrics.values())[0];
+                } else if (this.lyrics.size === 0) {
+                    this.elements.lyricsHeader.textContent = this.elements.currentAudioName.textContent.replace("正在播放: ", "");
+                }
+            }
+
+            onAudioLoadedMetadata() {
+                try {
+                    this.elements.audioPlayer.play().catch(error => {
+                        console.error("音频播放失败: ", error);
+                    });
+                } catch (error) {
+                    console.error("音频播放失败: ", error);
+                }
+            }
+
+            handleAudioEnded() {
+                if (this.audioFiles.length > 0) {
+                    this.elements.nextButton.click();
+                }
+            }
+
+            // 节流函数
+            throttle(func, limit) {
+                let lastCall = 0;
+                return function(...args) {
+                    const now = new Date().getTime();
+                    if (now - lastCall < limit) {
+                        return;
+                    }
+                    lastCall = now;
+                    return func(...args);
+                };
+            }
+
+            // 设置音量的方法
+            setVolume(volume) {
+                this.elements.audioPlayer.volume = volume;
+            }
+        }
+
+        const audioPlayer = new AudioPlayer();
+    </script>
+</body>
+</html>
