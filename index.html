@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Play Music</title>
+    <title>音频播放列表</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -81,7 +81,7 @@
             font-size: 14px;
         }
      .highlight-text {
-            color: #fbb929;
+            color: #132c33;
         }
      .lyrics-container {
             border: 1px solid #ddd;
@@ -99,10 +99,6 @@
             padding: 5px;
             border-bottom: 1px dashed #ccc;
             text-align: center;
-        }
-     .audio-list-item.active::before {
-            content: "正在播放 > ";
-            color: #fbb929;
         }
     </style>
 </head>
@@ -165,8 +161,6 @@
                 this.elements.audioPlayer.addEventListener('timeupdate', this.throttle(this.updateLyrics.bind(this), 100));
                 this.elements.audioPlayer.addEventListener('ended', this.handleAudioEnded.bind(this));
                 this.elements.audioPlayer.addEventListener('loadedmetadata', this.onAudioLoadedMetadata.bind(this));
-                // 设置默认音量为 10%
-                this.setVolume(0.1);
             }
 
             handleFileInputChange(event) {
@@ -198,11 +192,13 @@
                 for (let i = 0; i < listItems.length; i++) {
                     const item = listItems[i];
                     item.classList.remove('active');
+                    // 去掉 "正在播放 >"
                     item.textContent = item.textContent.replace("正在播放 > ", "");
                 }
                 if (this.currentIndex >= 0 && this.currentIndex < this.audioFiles.length) {
                     listItems[this.currentIndex].classList.add('active');
-                    listItems[this.currentIndex].textContent = "正在播放 > " + this.audioFiles[this.currentIndex].name;
+                    // 直接显示文件名
+                    listItems[this.currentIndex].textContent = this.audioFiles[this.currentIndex].name;
                 } else {
                     this.elements.currentAudioName.textContent = "正在播放: 无";
                 }
@@ -375,11 +371,6 @@
                     lastCall = now;
                     return func(...args);
                 };
-            }
-
-            // 设置音量的方法
-            setVolume(volume) {
-                this.elements.audioPlayer.volume = volume;
             }
         }
 
